@@ -1,0 +1,13 @@
+CompileFlags:
+  Add:
+    - '-ferror-limit=0'
+    - '-Wno-implicit-int'
+    - '-IC:/Users/yamas/AppData/Local/stm32cube/bundles/gnu-tools-for-stm32/13.3.1+st.9/arm-none-eabi/include'
+
+  CompilationDatabase: build/Debug
+Diagnostics:
+  Suppress:
+    - unused-includes
+    - unknown_typename
+    - unknown_typename_suggest
+    - typename_requires_specqual
