@@ -27,39 +27,85 @@ typedef enum {
   LOG_TRACE
 } log_level_t;
 
-// カラー付きログマクロ
+// 現在のログレベル設定（デフォルト: INFO）
+extern log_level_t current_log_level;
+
+// ログレベル設定関数
+void log_set_level(log_level_t level);
+log_level_t log_get_level(void);
+
+// カラー付きログマクロ（レベルチェック付き）
 #define LOG_ERROR(fmt, ...)                                                    \
-  printf_usart2(ANSI_COLOR_RED ANSI_BOLD "[ERROR] " ANSI_COLOR_RESET fmt,      \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_ERROR) {                                      \
+      printf_usart2(ANSI_COLOR_RED ANSI_BOLD "[ERROR] " ANSI_COLOR_RESET fmt,  \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define LOG_WARN(fmt, ...)                                                     \
-  printf_usart2(ANSI_COLOR_YELLOW "[WARN]  " ANSI_COLOR_RESET fmt,             \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_WARN) {                                       \
+      printf_usart2(ANSI_COLOR_YELLOW "[WARN]  " ANSI_COLOR_RESET fmt,         \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define LOG_INFO(fmt, ...)                                                     \
-  printf_usart2(ANSI_COLOR_GREEN "[INFO]  " ANSI_COLOR_RESET fmt, ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_INFO) {                                       \
+      printf_usart2(ANSI_COLOR_GREEN "[INFO]  " ANSI_COLOR_RESET fmt,          \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define LOG_DEBUG(fmt, ...)                                                    \
-  printf_usart2(ANSI_COLOR_CYAN "[DEBUG] " ANSI_COLOR_RESET fmt, ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_DEBUG) {                                      \
+      printf_usart2(ANSI_COLOR_CYAN "[DEBUG] " ANSI_COLOR_RESET fmt,           \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define LOG_TRACE(fmt, ...)                                                    \
-  printf_usart2(ANSI_COLOR_MAGENTA "[TRACE] " ANSI_COLOR_RESET fmt,            \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_TRACE) {                                      \
+      printf_usart2(ANSI_COLOR_MAGENTA "[TRACE] " ANSI_COLOR_RESET fmt,        \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
-// USB専用ログ
+// USB専用ログ（レベルチェック付き）
 #define USB_LOG(fmt, ...)                                                      \
-  printf_usart2(ANSI_COLOR_BLUE ANSI_BOLD "[USB]   " ANSI_COLOR_RESET fmt,     \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_INFO) {                                       \
+      printf_usart2(ANSI_COLOR_BLUE ANSI_BOLD "[USB]   " ANSI_COLOR_RESET fmt, \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define USB_ERROR(fmt, ...)                                                    \
-  printf_usart2(ANSI_COLOR_RED ANSI_BG_YELLOW                                  \
-                "[USB-ERR] " ANSI_COLOR_RESET fmt,                             \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_ERROR) {                                      \
+      printf_usart2(ANSI_COLOR_RED ANSI_BG_YELLOW                              \
+                    "[USB-ERR] " ANSI_COLOR_RESET fmt,                         \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define USB_SETUP(fmt, ...)                                                    \
-  printf_usart2(ANSI_COLOR_CYAN ANSI_UNDERLINE                                 \
-                "[SETUP] " ANSI_COLOR_RESET fmt,                               \
-                ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_DEBUG) {                                      \
+      printf_usart2(ANSI_COLOR_CYAN ANSI_UNDERLINE                             \
+                    "[SETUP] " ANSI_COLOR_RESET fmt,                           \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)
 
 #define USB_DATA(fmt, ...)                                                     \
-  printf_usart2(ANSI_COLOR_GREEN "[DATA]  " ANSI_COLOR_RESET fmt, ##__VA_ARGS__)
+  do {                                                                         \
+    if (current_log_level >= LOG_TRACE) {                                      \
+      printf_usart2(ANSI_COLOR_GREEN "[DATA]  " ANSI_COLOR_RESET fmt,          \
+                    ##__VA_ARGS__);                                            \
+    }                                                                          \
+  } while (0)

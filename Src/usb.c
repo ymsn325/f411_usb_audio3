@@ -1,6 +1,7 @@
 #include "usb.h"
 #include "log.h"
 #include "usart.h"
+#include "usb_audio.h"
 #include "usb_desc.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -38,8 +39,6 @@ static void usb_read_packet(uint8_t *dest, uint32_t bcnt);
 static void usb_handle_setup(uint32_t epnum);
 static void usb_handle_rxflvl(void);
 static void usb_process_setup(USB_SetupPacket *setup);
-static void usb_control_stall(void);
-static void usb_control_send_data(uint8_t *data, uint16_t length);
 static void usb_send_contorl_packet(void);
 static void usb_write_packet(uint8_t epnum, uint8_t *src, uint16_t len);
 static void usb_get_device_descriptor(uint8_t **desc_data,
@@ -52,6 +51,8 @@ static void usb_process_set_address(USB_SetupPacket *setup);
 static void usb_prepare_ep0_out_status(void);
 static void usb_process_audio_request(USB_SetupPacket *setup);
 static void usb_cofig_audio_endpoint(void);
+static void debug_descriptor_content(void);
+static void debug_raw_descriptors(void);
 
 static void usb_core_reset(void) {
   USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
@@ -60,15 +61,20 @@ static void usb_core_reset(void) {
 }
 
 void usb_init(void) {
+  // Configuration Descriptorの後半部分をダンプ
+  LOG_INFO("=== Configuration Descriptor Last 20 bytes ===\r\n");
+  uint8_t *cfg = (uint8_t *)&configuration_descriptor;
+  for (int i = 107; i < 127; i++) {
+    LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
+  }
   RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
   usb_core_reset();
   USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_VBUSBSEN;
   USB_OTG_FS->GUSBCFG |= USB_OTG_GUSBCFG_FDMOD;
 
   USB_OTG_FS->GRXFSIZ = 256;
-  USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = (64 << USB_OTG_HPTXFSIZ_PTXFD_Pos) | 128;
+  USB_OTG_FS->DIEPTXF0_HNPTXFSIZ = (64 << USB_OTG_HPTXFSIZ_PTXFD_Pos) | 256;
   // デバイススピード設定
-  USB_DEVICE->DCFG &= ~USB_OTG_DCFG_DSPD;
   USB_DEVICE->DCFG |= USB_OTG_DCFG_DSPD; // Full Speed (11)
 
   // ターンアラウンドタイム設定
@@ -86,6 +92,52 @@ void usb_init(void) {
   NVIC_EnableIRQ(OTG_FS_IRQn);
 
   USB_DEVICE->DCTL &= ~USB_OTG_DCTL_SDIS;
+
+  uac2_init();
+}
+
+void debug_raw_descriptors(void) {
+  LOG_INFO("=== Device Descriptor Raw ===\r\n");
+  uint8_t *dev = (uint8_t *)&device_descriptor;
+  for (int i = 0; i < 18; i++) {
+    LOG_INFO("dev[%02d]: 0x%02X\r\n", i, dev[i]);
+  }
+
+  LOG_INFO("=== Configuration Descriptor First 40 bytes ===\r\n");
+  uint8_t *cfg = (uint8_t *)&configuration_descriptor;
+  for (int i = 0; i < 40; i++) {
+    LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
+  }
+
+  LOG_INFO("=== Expected values check ===\r\n");
+  LOG_INFO("Device Class (should be 0xEF): 0x%02X\r\n", dev[4]);
+  LOG_INFO("Device SubClass (should be 0x02): 0x%02X\r\n", dev[5]);
+  LOG_INFO("Device Protocol (should be 0x01): 0x%02X\r\n", dev[6]);
+}
+
+void debug_descriptor_content(void) {
+  LOG_DEBUG("=== Configuration Descriptor Analysis ===\r\n");
+  uint8_t *desc = (uint8_t *)&configuration_descriptor;
+
+  for (int i = 0; i < 127;) {
+    uint8_t length = desc[i];
+    uint8_t type = desc[i + 1];
+
+    LOG_DEBUG("Desc[%d]: Length=%d, Type=0x%02X\r\n", i, length, type);
+
+    if (type == 0x0B)
+      LOG_DEBUG("  -> Interface Association\r\n");
+    if (type == 0x04)
+      LOG_DEBUG("  -> Interface\r\n");
+    if (type == 0x24)
+      LOG_DEBUG("  -> Class-Specific Interface\r\n");
+    if (type == 0x05)
+      LOG_DEBUG("  -> Endpoint\r\n");
+    if (type == 0x25)
+      LOG_DEBUG("  -> Class-Specific Endpoint\r\n");
+
+    i += length;
+  }
 }
 
 USB_ControlState usb_control_state = {
@@ -98,8 +150,9 @@ USB_ControlState usb_control_state = {
 };
 
 static void usb_cofig_audio_endpoint(void) {
-  USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_0 |
-                          (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+  USB_OUTEP[1].DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_0 |
+                         (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+  USB_OTG_FS->DIEPTXF[0] = (196 << USB_OTG_DTXFSTS_INEPTFSAV_Pos) | 256;
 }
 
 static void usb_get_device_descriptor(uint8_t **desc_data,
@@ -170,22 +223,40 @@ static void usb_process_get_descriptor(USB_SetupPacket *setup) {
     usb_get_configuration_descriptor(&desc_data, &desc_length);
     break;
 
-  case 0x03:
-    // STRING_DESCRIPTOR
-    LOG_INFO("Requesting string descriptor\r\n");
+  case 0x03: // STRING_DESCRIPTOR
+    LOG_INFO("Requesting string descriptor %d\r\n", desc_index);
     switch (desc_index) {
     case 0:
-      usb_get_string_descriptor(&desc_data, &desc_length,
-                                string_lang_descriptor);
+      desc_data = (uint8_t *)string_lang_descriptor;
+      desc_length = string_lang_descriptor[0];
+      LOG_INFO("String 0: bLength=%d\r\n", string_lang_descriptor[0]);
       break;
+
     case 1:
-      usb_get_string_descriptor(&desc_data, &desc_length,
-                                string_manufacturer_descriptor);
+      desc_data = (uint8_t *)string_manufacturer_descriptor;
+      desc_length = string_manufacturer_descriptor[0];
+      LOG_INFO("String 1: bLength=%d\r\n", string_manufacturer_descriptor[0]);
       break;
+
     case 2:
-      usb_get_string_descriptor(&desc_data, &desc_length,
-                                string_product_descriptor);
+      desc_data = (uint8_t *)string_product_descriptor;
+      desc_length = string_product_descriptor[0]; // bLengthフィールドから取得
+
+      // デバッグ：実際の長さを確認
+      LOG_INFO("String 2: descriptor says length=%d, setup requests=%d\r\n",
+               desc_length, setup->wLength);
+
+      // 要求されたサイズが記述子サイズより大きい場合は記述子サイズに制限
+      if (setup->wLength > desc_length) {
+        LOG_WARN("Requested size (%d) > descriptor size (%d), limiting\r\n",
+                 setup->wLength, desc_length);
+      }
       break;
+
+    default:
+      LOG_WARN("Invalid string descriptor index: %d\r\n", desc_index);
+      usb_control_stall();
+      return;
     }
     break;
 
@@ -196,7 +267,7 @@ static void usb_process_get_descriptor(USB_SetupPacket *setup) {
     break;
 
   default:
-    LOG_INFO("UNKNOWN DESCRIPTOR TYPE: 0x%02X\r\n", desc_type);
+    LOG_WARN("UNKNOWN DESCRIPTOR TYPE: 0x%02X\r\n", desc_type);
     usb_control_stall();
     return;
   }
@@ -214,14 +285,14 @@ static void usb_process_get_descriptor(USB_SetupPacket *setup) {
   }
 }
 
-static void usb_control_stall(void) {
+void usb_control_stall(void) {
   LOG_INFO("Control STALL\r\n");
   USB_INEP[0].DIEPCTL |= USB_OTG_DIEPCTL_STALL;
   USB_OUTEP[0].DOEPCTL |= USB_OTG_DOEPCTL_STALL;
   usb_control_state.state = USB_CTRL_STATE_IDLE;
 }
 
-static void usb_control_send_data(uint8_t *data, uint16_t length) {
+void usb_control_send_data(uint8_t *data, uint16_t length) {
   usb_control_state.data_buffer = data;
   usb_control_state.data_length = length;
   usb_control_state.data_sent = 0;
@@ -249,15 +320,15 @@ static void usb_send_contorl_packet(void) {
   uint16_t remaining =
       usb_control_state.data_length - usb_control_state.data_sent;
 
-  LOG_INFO("Send control packet: remaining=%d, sent=%d, total=%d\r\n",
-           remaining, usb_control_state.data_sent,
-           usb_control_state.data_length);
+  LOG_DEBUG("Send control packet: remaining=%d, sent=%d, total=%d\r\n",
+            remaining, usb_control_state.data_sent,
+            usb_control_state.data_length);
 
   if (remaining > 0) {
     packet_size = (remaining > 64) ? 64 : remaining;
 
-    LOG_INFO("Sending packet: size=%d, sent=%d, total=%d\r\n", packet_size,
-             usb_control_state.data_sent, usb_control_state.data_length);
+    LOG_DEBUG("Sending packet: size=%d, sent=%d, total=%d\r\n", packet_size,
+              usb_control_state.data_sent, usb_control_state.data_length);
 
     usb_write_packet(
         0, usb_control_state.data_buffer + usb_control_state.data_sent,
@@ -267,19 +338,19 @@ static void usb_send_contorl_packet(void) {
     if (packet_size == 64 &&
         usb_control_state.data_sent == usb_control_state.data_length) {
       usb_control_state.zlp_required = true;
-      LOG_INFO("ZLP will be required\r\n");
+      LOG_DEBUG("ZLP will be required\r\n");
     }
   } else if (usb_control_state.zlp_required) {
-    LOG_INFO("Sending ZLP\r\n");
+    LOG_DEBUG("Sending ZLP\r\n");
     usb_write_packet(0, NULL, 0);
     usb_control_state.zlp_required = false;
   } else {
-    LOG_INFO("Data transfer complete - preparing for STATUS OUT\r\n");
+    LOG_DEBUG("Data transfer complete - preparing for STATUS OUT\r\n");
     usb_control_state.state = USB_CTRL_STATE_STATUS_OUT;
     usb_prepare_ep0_out_status();
   }
 }
-
+static uint8_t current_configuration = 0;
 static void usb_process_set_configuration(USB_SetupPacket *setup) {
   uint8_t configuration_value = setup->wValue & 0xff;
 
@@ -287,12 +358,14 @@ static void usb_process_set_configuration(USB_SetupPacket *setup) {
            configuration_value);
 
   if (configuration_value == 1) {
-    USB_OUTEP[1].DOEPCTL |=
-        USB_OTG_DOEPCTL_EPENA | (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+    USB_OUTEP[1].DOEPCTL =
+        USB_OTG_DOEPCTL_EPTYP_0 | (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
     LOG_INFO("Audio streaming endpoint enabled\r\n");
+    current_configuration = 1;
     usb_control_send_data(NULL, 0);
   } else if (configuration_value == 0) {
     LOG_INFO("Configuration 0 set (unconfigured)\r\n");
+    current_configuration = 0;
     usb_control_send_data(NULL, 0);
   } else {
     LOG_ERROR("Invalid configuration value: 0x%02X\r\n", configuration_value);
@@ -308,19 +381,38 @@ static void usb_process_set_interface(USB_SetupPacket *setup) {
            interface_num, alternate_setting);
 
   if (interface_num == 0) {
+    // Audio Control Interface - 常にalternate setting 0のみ
     if (alternate_setting == 0) {
       LOG_INFO("Setting interface 0, alternate setting 0\r\n");
       usb_control_send_data(NULL, 0);
     } else {
-      LOG_ERROR("Invalid alternate setting: 0x%02X\r\n", alternate_setting);
+      LOG_ERROR("Invalid alternate setting for interface 0: 0x%02X\r\n",
+                alternate_setting);
       usb_control_stall();
     }
   } else if (interface_num == 1) {
-    if (alternate_setting == 0 || alternate_setting == 1) {
-      LOG_INFO("Setting interface 1, alternate setting 0\r\n");
+    // Audio Streaming Interface - ここでエンドポイント制御
+    if (alternate_setting == 0) {
+      // Alt 0: ゼロ帯域幅（エンドポイント無効化）
+      USB_OUTEP[1].DOEPCTL &= ~USB_OTG_DOEPCTL_EPENA;
+      USB_OUTEP[1].DOEPCTL &= ~USB_OTG_DOEPCTL_USBAEP;
+      LOG_INFO("Interface 1 Alt 0: Zero bandwidth - endpoint disabled\r\n");
+      usb_control_send_data(NULL, 0);
+    } else if (alternate_setting == 1) {
+      // Alt 1: 動作モード（エンドポイント有効化）
+      USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_USBAEP;
+      USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPTYP_0; // Isochronous
+      USB_OUTEP[1].DOEPCTL |= (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+      USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
+
+      // 受信準備
+      USB_OUTEP[1].DOEPTSIZ = (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | 196;
+
+      LOG_INFO("Interface 1 Alt 1: Operational - endpoint enabled\r\n");
       usb_control_send_data(NULL, 0);
     } else {
-      LOG_ERROR("Invalid alternate setting: 0x%02X\r\n", alternate_setting);
+      LOG_ERROR("Invalid alternate setting for interface 1: 0x%02X\r\n",
+                alternate_setting);
       usb_control_stall();
     }
   } else {
@@ -354,6 +446,13 @@ static void usb_process_standard_request(USB_SetupPacket *setup) {
     usb_process_get_descriptor(setup);
     break;
 
+  case 0x08: // GET_CONFIGURATION
+    LOG_INFO("GET_CONFIGURATION: returning %d\r\n", current_configuration);
+    static uint8_t config_response;
+    config_response = current_configuration;
+    usb_control_send_data(&config_response, 1);
+    break;
+
   case 0x09:
     // SET_CONFIGURATION
     usb_process_set_configuration(setup);
@@ -365,7 +464,7 @@ static void usb_process_standard_request(USB_SetupPacket *setup) {
     break;
 
   default:
-    LOG_INFO("Unsupported standard request: 0x%02X\r\n", setup->bRequest);
+    LOG_WARN("Unsupported standard request: 0x%02X\r\n", setup->bRequest);
     usb_control_stall();
     break;
   }
@@ -388,18 +487,40 @@ static void usb_process_audio_request(USB_SetupPacket *setup) {
     break;
 
   default:
-    LOG_INFO("Unsupported audio request: 0x%02X\r\n", setup->bRequest);
+    LOG_WARN("Unsupported audio request: 0x%02X\r\n", setup->bRequest);
+    usb_control_stall();
+    break;
+  }
+}
+
+static void usb_process_vendor_request(USB_SetupPacket *setup) {
+  static uint8_t keep_alive_data[4] = {0xaa, 0xbb, 0xcc, 0xdd};
+
+  switch (setup->bRequest) {
+  case 0x01:
+    // keep alive request
+    LOG_INFO("keep alive request\r\n");
+    usb_control_send_data(keep_alive_data, 4);
+    break;
+
+  default:
+    LOG_WARN("Unsupported vendor request: 0x%02X\r\n", setup->bRequest);
     usb_control_stall();
     break;
   }
 }
 
 static void usb_process_setup(USB_SetupPacket *setup) {
-  LOG_INFO("=== SETUP PACKET ===\r\n");
-  LOG_INFO("bmRequestType=0x%02X, bRequest=0x%02X\r\n", setup->bmRequestType,
-           setup->bRequest);
-  LOG_INFO("wValue=0x%04X, wIndex=0x%04X, wLength=%d\r\n", setup->wValue,
-           setup->wIndex, setup->wLength);
+  USB_SETUP("bmRequestType=0x%02X, bRequest=0x%02X\r\n", setup->bmRequestType,
+            setup->bRequest);
+  USB_SETUP("Recipient: %s, Type: %s\r\n",
+            (setup->bmRequestType & 0x1F) == 0   ? "Device"
+            : (setup->bmRequestType & 0x1F) == 1 ? "Interface"
+            : (setup->bmRequestType & 0x1F) == 2 ? "Endpoint"
+                                                 : "Other",
+            (setup->bmRequestType & 0x60) == 0x00   ? "Standard"
+            : (setup->bmRequestType & 0x60) == 0x20 ? "Class"
+                                                    : "Other");
 
   usb_control_state.state = USB_CTRL_STATE_SETUP;
   usb_control_state.data_length = setup->wLength;
@@ -411,13 +532,20 @@ static void usb_process_setup(USB_SetupPacket *setup) {
     usb_process_standard_request(setup);
     break;
 
-  case 0x02:
+  case 0x20:
     // class request
-    usb_process_audio_request(setup);
+    LOG_INFO("Audio class request\r\n");
+    uac2_process_audio_request(setup);
+    break;
+
+  case 0x40:
+    // vendor request
+    LOG_INFO("Vendor class request\r\n");
+    usb_process_vendor_request(setup);
     break;
 
   default:
-    LOG_INFO("Unsupported request type: 0x%02X\r\n",
+    LOG_WARN("Unsupported request type: 0x%02X\r\n",
              setup->bmRequestType & 0x60);
     usb_control_stall();
     break;
@@ -438,7 +566,7 @@ static void usb_process_set_address(USB_SetupPacket *setup) {
 
     usb_control_send_data(NULL, 0);
   } else {
-    LOG_INFO("Invalid SET_ADDRESS request\r\n");
+    LOG_WARN("Invalid SET_ADDRESS request\r\n");
     usb_control_stall();
   }
 }
@@ -475,7 +603,7 @@ static void usb_write_packet(uint8_t epnum, uint8_t *src, uint16_t len) {
   uint32_t *fifo = USB_FIFO(epnum);
   uint32_t data;
 
-  LOG_INFO("Write packet: epnum=%d, len=%d\r\n", epnum, len);
+  LOG_DEBUG("Write packet: epnum=%d, len=%d\r\n", epnum, len);
 
   // DIEPTSIZ設定
   USB_INEP[epnum].DIEPTSIZ = (1 << USB_OTG_DIEPTSIZ_PKTCNT_Pos) | len;
@@ -505,7 +633,7 @@ static void usb_handle_rxflvl(void) {
   uint32_t bcnt = (grxstsp & USB_OTG_GRXSTSP_BCNT) >> USB_OTG_GRXSTSP_BCNT_Pos;
   uint32_t epnum = grxstsp & USB_OTG_GRXSTSP_EPNUM;
 
-  LOG_INFO("RXFLVL: EP%d, PKTSTS=0x%X, BCNT=%d\r\n", epnum, pktsts, bcnt);
+  LOG_DEBUG("RXFLVL: EP%d, PKTSTS=0x%X, BCNT=%d\r\n", epnum, pktsts, bcnt);
 
   switch (pktsts) {
   case PKTSTS_SETUP_RECEIVED: // SETUP受信
@@ -513,19 +641,23 @@ static void usb_handle_rxflvl(void) {
     break;
 
   case PKTSTS_OUT_DATA_RECEIVED: // OUT DATA受信
-    LOG_INFO("OUT DATA received\r\n");
+    USB_DATA("OUT DATA received\r\n");
     if (bcnt > 0) {
       usb_read_packet(NULL, bcnt);
     }
     break;
 
   case PKTSTS_OUT_COMPLETE: // OUT転送完了
-    LOG_INFO("OUT transfer completed\r\n");
+    LOG_DEBUG("OUT transfer completed\r\n");
     usb_prepare_ep0_out_status();
     break;
 
+  case PKTSTS_SETUP_COMPLETE: // SETUP転送完了
+    LOG_DEBUG("SETUP transfer completed\r\n");
+    break;
+
   default:
-    LOG_INFO("Unknown packet status: 0x%02X\r\n", pktsts);
+    LOG_WARN("Unknown packet status: 0x%02X\r\n", pktsts);
     if (bcnt > 0) {
       usb_read_packet(NULL, bcnt);
     }
@@ -534,9 +666,9 @@ static void usb_handle_rxflvl(void) {
 }
 
 static void usb_handle_ep0_in_complete(void) {
-  LOG_INFO("EP0 IN complete - State: %d, Sent: %d, Total: %d\r\n",
-           usb_control_state.state, usb_control_state.data_sent,
-           usb_control_state.data_length);
+  LOG_DEBUG("EP0 IN complete - State: %d, Sent: %d, Total: %d\r\n",
+            usb_control_state.state, usb_control_state.data_sent,
+            usb_control_state.data_length);
 
   if (usb_control_state.state == USB_CTRL_STATE_DATA_IN) {
     usb_send_contorl_packet();
@@ -546,7 +678,7 @@ static void usb_handle_ep0_in_complete(void) {
 static void usb_handle_ep0_out_complete(void) {
   if (usb_control_state.state == USB_CTRL_STATE_STATUS_OUT) {
     usb_control_state.state = USB_CTRL_STATE_IDLE;
-    LOG_INFO("EP0 out status complete - Control transfer done\r\n");
+    LOG_DEBUG("EP0 out status complete - Control transfer done\r\n");
   }
 }
 
@@ -565,7 +697,7 @@ static void usb_handle_iepint(void) {
 
       if (diepint & USB_OTG_DIEPINT_XFRC) {
         USB_INEP[ep].DIEPINT = USB_OTG_DIEPINT_XFRC;
-        LOG_INFO("EP%d IN transfer completed\r\n", ep);
+        LOG_DEBUG("EP%d IN transfer completed\r\n", ep);
 
         if (ep == 0) {
           usb_handle_ep0_in_complete();
@@ -585,7 +717,7 @@ static void usb_handle_oepint(void) {
 
       if (doepint & USB_OTG_DOEPINT_XFRC) {
         USB_OUTEP[ep].DOEPINT = USB_OTG_DOEPINT_XFRC;
-        LOG_INFO("EP%d out transfer completed\r\n", ep);
+        LOG_DEBUG("EP%d out transfer completed\r\n", ep);
 
         if (ep == 0) {
           usb_handle_ep0_out_complete();

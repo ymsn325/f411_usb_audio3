@@ -32,3 +32,5 @@ typedef struct {
 } USB_ControlState;
 
 void usb_init(void);
+void usb_control_stall(void);
+void usb_control_send_data(uint8_t *data, uint16_t length);

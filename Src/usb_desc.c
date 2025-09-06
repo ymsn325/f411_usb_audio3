@@ -1,4 +1,5 @@
 #include "usb_desc.h"
+#include "usb_audio.h"
 
 const USB_DeviceDescriptor device_descriptor = {
     .bLength = sizeof(USB_DeviceDescriptor),
@@ -11,9 +12,9 @@ const USB_DeviceDescriptor device_descriptor = {
     .idVendor = 0x0483,
     .idProduct = 0x5740,
     .bcdDevice = 0x0200,
-    .iManufacturer = 0x00,
-    .iProduct = 0x01,
-    .iSerialNumber = 0x02,
+    .iManufacturer = 0x01,
+    .iProduct = 0x02,
+    .iSerialNumber = 0x00,
     .bNumConfigurations = 0x01,
 };
 
@@ -67,8 +68,13 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bDescriptorSubtype = UAC2_HEADER,         // HEADER (0x01)
             .bcdADC = UAC2_BCDADC,                     // UAC 2.0 (0x0200)
             .bCategory = 0x08,                         // Desktop speaker
-            .wTotalLength = 9 + 8 + 17 + 12, // Header + Clock + Input + Output
-            .bmControls = 0x00               // No controls
+            .wTotalLength =
+                sizeof(UAC2_ACHeaderDescriptor) +
+                sizeof(UAC2_ClockSourceDescriptor) +
+                sizeof(UAC2_InputTerminalDescriptor) +
+                sizeof(UAC2_OutputTerminalDescriptor), // Header + Clock + Input
+                                                       // + Output
+            .bmControls = 0x00                         // No controls
         },
 
     // Clock Source Descriptor
@@ -77,7 +83,7 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bLength = sizeof(UAC2_ClockSourceDescriptor),
             .bDescriptorType = USB_DTYPE_CS_INTERFACE, // CS_INTERFACE (0x24)
             .bDescriptorSubtype = UAC2_CLOCK_SOURCE,   // CLOCK_SOURCE (0x0A)
-            .bClockID = 0x10,                          // Clock source ID
+            .bClockID = UAC2_ENTITY_ID_CLOCK_SOURCE,   // Clock source ID
             .bmAttributes = 0x01,                      // Internal fixed clock
             .bmControls = 0x01,     // Clock frequency control (read-only)
             .bAssocTerminal = 0x00, // No associated terminal
@@ -90,11 +96,12 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bLength = sizeof(UAC2_InputTerminalDescriptor),
             .bDescriptorType = USB_DTYPE_CS_INTERFACE, // CS_INTERFACE (0x24)
             .bDescriptorSubtype = UAC2_INPUT_TERMINAL, // INPUT_TERMINAL (0x02)
-            .bTerminalID = 0x01,                       // Terminal ID
+            .bTerminalID = UAC2_ENTITY_ID_INPUT_TERMINAL, // Terminal ID
             .wTerminalType =
                 UAC2_TERMINAL_USB_STREAMING, // USB Streaming (0x0101)
             .bAssocTerminal = 0x00,          // No associated terminal
-            .bCSourceID = 0x10,              // Connected to clock source
+            .bCSourceID =
+                UAC2_ENTITY_ID_CLOCK_SOURCE, // Connected to clock source
             .bNrChannels = 2,                // 2 channels (stereo)
             .bmChannelConfig = 0x00000003,   // Left Front + Right Front
             .iChannelNames = 0,              // No string descriptor
@@ -108,14 +115,16 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bLength = sizeof(UAC2_OutputTerminalDescriptor),
             .bDescriptorType = USB_DTYPE_CS_INTERFACE, // CS_INTERFACE (0x24)
             .bDescriptorSubtype =
-                UAC2_OUTPUT_TERMINAL,               // OUTPUT_TERMINAL (0x03)
-            .bTerminalID = 0x02,                    // Terminal ID
-            .wTerminalType = UAC2_TERMINAL_SPEAKER, // Speaker (0x0301)
-            .bAssocTerminal = 0x00,                 // No associated terminal
-            .bSourceID = 0x01,    // Connected to input terminal
-            .bCSourceID = 0x10,   // Connected to clock source
-            .bmControls = 0x0000, // No controls
-            .iTerminal = 0        // No string descriptor
+                UAC2_OUTPUT_TERMINAL, // OUTPUT_TERMINAL (0x03)
+            .bTerminalID = UAC2_ENTITY_ID_OUTPUT_TERMINAL, // Terminal ID
+            .wTerminalType = UAC2_TERMINAL_SPEAKER,        // Speaker (0x0301)
+            .bAssocTerminal = 0x00, // No associated terminal
+            .bSourceID =
+                UAC2_ENTITY_ID_INPUT_TERMINAL, // Connected to input terminal
+            .bCSourceID =
+                UAC2_ENTITY_ID_CLOCK_SOURCE, // Connected to clock source
+            .bmControls = 0x0000,            // No controls
+            .iTerminal = 0                   // No string descriptor
         },
 
     // Audio Streaming Interface (Interface 1, Alt 0 - Zero bandwidth)
@@ -150,7 +159,8 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bLength = sizeof(UAC2_ASGeneralDescriptor),
             .bDescriptorType = USB_DTYPE_CS_INTERFACE, // CS_INTERFACE (0x24)
             .bDescriptorSubtype = UAC2_AS_GENERAL,     // AS_GENERAL (0x01)
-            .bTerminalLink = 0x01,             // Connected to input terminal
+            .bTerminalLink =
+                UAC2_ENTITY_ID_INPUT_TERMINAL, // Connected to input terminal
             .bmControls = 0x00,                // No controls
             .bFormatType = UAC2_FORMAT_TYPE_I, // Format Type I (0x01)
             .bmFormats = UAC2_FORMAT_PCM,      // PCM format (0x00000001)
@@ -176,7 +186,7 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bLength = sizeof(USB_EndpointDescriptor),
             .bDescriptorType = 0x05,  // ENDPOINT
             .bEndpointAddress = 0x01, // EP1 OUT
-            .bmAttributes = 0x05,     // Isochronous, Asynchronous
+            .bmAttributes = 0x09,     // Isochronous, Adaptive
             .wMaxPacketSize = 196,    // 48kHz * 2ch * 2bytes + overhead
             .bInterval = 1            // 1ms interval (Full Speed)
         },
@@ -196,9 +206,9 @@ const USB_DeviceQualifierDescriptor device_qualifier_descriptor = {
     .bLength = sizeof(USB_DeviceQualifierDescriptor),
     .bDescriptorType = 0x06, // DEVICE_QUALIFIER
     .bcdUSB = 0x0200,        // USB 2.0
-    .bDeviceClass = 0x00,    // Interface Defined
-    .bDeviceSubClass = 0x00,
-    .bDeviceProtocol = 0x00,
+    .bDeviceClass = 0xef,    // Interface Defined
+    .bDeviceSubClass = 0x02,
+    .bDeviceProtocol = 0x01,
     .bMaxPacketSize0 = 64,
     .bNumConfigurations = 1,
     .bReserved = 0};
@@ -207,7 +217,7 @@ const USB_DeviceQualifierDescriptor device_qualifier_descriptor = {
 const uint8_t string_lang_descriptor[] = {
     4,         // bLength
     0x03,      // bDescriptorType (STRING)
-    0x11, 0x04 // wLANGID (0x0411 = Japanese)
+    0x09, 0x04 // wLANGID (0x0409 = English)
 };
 
 // Manufacturer string
