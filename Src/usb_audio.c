@@ -90,18 +90,13 @@ void uac2_handle_clock_source_request(USB_SetupPacket *setup,
       // GET_RANGE: Return supported sample rate range
       if (setup->bmRequestType & 0x80) {
         LOG_DEBUG("GET_RANGE Sample Rate\r\n");
-        // Simple range: 44.1kHz - 48kHz
-        response_buffer[0] = 1; // wNumSubRanges (1 range)
-        response_buffer[1] = 0;
-        // Range 1: 44100 Hz min
-        response_buffer[2] = (UAC2_SAMPLE_RATE_44100 >> 0) & 0xFF;
-        response_buffer[3] = (UAC2_SAMPLE_RATE_44100 >> 8) & 0xFF;
-        response_buffer[4] = (UAC2_SAMPLE_RATE_44100 >> 16) & 0xFF;
-        response_buffer[5] = (UAC2_SAMPLE_RATE_44100 >> 24) & 0xFF;
-        // Range 1: 48000 Hz max
-        response_buffer[6] = (UAC2_SAMPLE_RATE_48000 >> 0) & 0xFF;
-        response_buffer[7] = (UAC2_SAMPLE_RATE_48000 >> 8) & 0xFF;
-        usb_control_send_data(response_buffer, 8);
+        static uint8_t sample_rate_range[14] = {
+            0x01, 0x00,             // wNumSubranges
+            0x80, 0xbb, 0x00, 0x00, // dMIN
+            0x80, 0xbb, 0x00, 0x00, // dMAX
+            0x01, 0x00, 0x00, 0x00  // dRES
+        };
+        usb_control_send_data(sample_rate_range, 14);
       } else {
         usb_control_stall();
       }
