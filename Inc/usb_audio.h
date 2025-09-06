@@ -39,6 +39,8 @@
 #define UAC2_SAMPLE_RATE_48000 48000
 #define UAC2_SAMPLE_RATE_44100 44100
 
+#define AUDIO_BUFFER_SIZE 196
+
 // UAC2.0 Clock Source State
 typedef struct {
   uint32_t sample_rate; // Current sample rate
@@ -56,3 +58,6 @@ void uac2_handle_clock_source_request(USB_SetupPacket *setup,
                                       uint8_t control_selector);
 void uac2_handle_clock_selector_request(USB_SetupPacket *setup,
                                         uint8_t control_selector);
+void uac2_prepare_next_reception(void);
+void uac2_handle_audio_data_received(void);
+void uac2_read_audio_from_fifo(uint32_t byte_count);

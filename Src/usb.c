@@ -7,18 +7,6 @@
 #include <stdint.h>
 #include <stm32f411xe.h>
 
-#define USB_DEVICE                                                             \
-  ((USB_OTG_DeviceTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +                \
-                             USB_OTG_DEVICE_BASE))
-#define USB_INEP                                                               \
-  ((USB_OTG_INEndpointTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +            \
-                                 USB_OTG_IN_ENDPOINT_BASE))
-#define USB_OUTEP                                                              \
-  ((USB_OTG_OUTEndpointTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +           \
-                                  USB_OTG_OUT_ENDPOINT_BASE))
-#define USB_FIFO(ep)                                                           \
-  ((uint32_t *)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE +                   \
-                ((ep) * USB_OTG_FIFO_SIZE)))
 // GRXSTSP の PKTSTS フィールド値
 #define PKTSTS_OUT_NAK 0x01           // OUT NAK (ホストがNAKを受信)
 #define PKTSTS_OUT_DATA_RECEIVED 0x02 // OUT データパケット受信
@@ -51,8 +39,8 @@ static void usb_process_set_address(USB_SetupPacket *setup);
 static void usb_prepare_ep0_out_status(void);
 static void usb_process_audio_request(USB_SetupPacket *setup);
 static void usb_cofig_audio_endpoint(void);
-static void debug_descriptor_content(void);
-static void debug_raw_descriptors(void);
+// static void debug_descriptor_content(void);
+// static void debug_raw_descriptors(void);
 
 static void usb_core_reset(void) {
   USB_OTG_FS->GRSTCTL |= USB_OTG_GRSTCTL_CSRST;
@@ -96,49 +84,49 @@ void usb_init(void) {
   uac2_init();
 }
 
-void debug_raw_descriptors(void) {
-  LOG_INFO("=== Device Descriptor Raw ===\r\n");
-  uint8_t *dev = (uint8_t *)&device_descriptor;
-  for (int i = 0; i < 18; i++) {
-    LOG_INFO("dev[%02d]: 0x%02X\r\n", i, dev[i]);
-  }
+// void debug_raw_descriptors(void) {
+// LOG_INFO("=== Device Descriptor Raw ===\r\n");
+// uint8_t *dev = (uint8_t *)&device_descriptor;
+// for (int i = 0; i < 18; i++) {
+// LOG_INFO("dev[%02d]: 0x%02X\r\n", i, dev[i]);
+// }
+//
+// LOG_INFO("=== Configuration Descriptor First 40 bytes ===\r\n");
+// uint8_t *cfg = (uint8_t *)&configuration_descriptor;
+// for (int i = 0; i < 40; i++) {
+// LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
+// }
+//
+// LOG_INFO("=== Expected values check ===\r\n");
+// LOG_INFO("Device Class (should be 0xEF): 0x%02X\r\n", dev[4]);
+// LOG_INFO("Device SubClass (should be 0x02): 0x%02X\r\n", dev[5]);
+// LOG_INFO("Device Protocol (should be 0x01): 0x%02X\r\n", dev[6]);
+// }
 
-  LOG_INFO("=== Configuration Descriptor First 40 bytes ===\r\n");
-  uint8_t *cfg = (uint8_t *)&configuration_descriptor;
-  for (int i = 0; i < 40; i++) {
-    LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
-  }
+// void debug_descriptor_content(void) {
+//   LOG_DEBUG("=== Configuration Descriptor Analysis ===\r\n");
+//   uint8_t *desc = (uint8_t *)&configuration_descriptor;
 
-  LOG_INFO("=== Expected values check ===\r\n");
-  LOG_INFO("Device Class (should be 0xEF): 0x%02X\r\n", dev[4]);
-  LOG_INFO("Device SubClass (should be 0x02): 0x%02X\r\n", dev[5]);
-  LOG_INFO("Device Protocol (should be 0x01): 0x%02X\r\n", dev[6]);
-}
+//   for (int i = 0; i < 127;) {
+//     uint8_t length = desc[i];
+//     uint8_t type = desc[i + 1];
 
-void debug_descriptor_content(void) {
-  LOG_DEBUG("=== Configuration Descriptor Analysis ===\r\n");
-  uint8_t *desc = (uint8_t *)&configuration_descriptor;
+//     LOG_DEBUG("Desc[%d]: Length=%d, Type=0x%02X\r\n", i, length, type);
 
-  for (int i = 0; i < 127;) {
-    uint8_t length = desc[i];
-    uint8_t type = desc[i + 1];
+//     if (type == 0x0B)
+//       LOG_DEBUG("  -> Interface Association\r\n");
+//     if (type == 0x04)
+//       LOG_DEBUG("  -> Interface\r\n");
+//     if (type == 0x24)
+//       LOG_DEBUG("  -> Class-Specific Interface\r\n");
+//     if (type == 0x05)
+//       LOG_DEBUG("  -> Endpoint\r\n");
+//     if (type == 0x25)
+//       LOG_DEBUG("  -> Class-Specific Endpoint\r\n");
 
-    LOG_DEBUG("Desc[%d]: Length=%d, Type=0x%02X\r\n", i, length, type);
-
-    if (type == 0x0B)
-      LOG_DEBUG("  -> Interface Association\r\n");
-    if (type == 0x04)
-      LOG_DEBUG("  -> Interface\r\n");
-    if (type == 0x24)
-      LOG_DEBUG("  -> Class-Specific Interface\r\n");
-    if (type == 0x05)
-      LOG_DEBUG("  -> Endpoint\r\n");
-    if (type == 0x25)
-      LOG_DEBUG("  -> Class-Specific Endpoint\r\n");
-
-    i += length;
-  }
-}
+//     i += length;
+//   }
+// }
 
 USB_ControlState usb_control_state = {
     .state = USB_CTRL_STATE_IDLE,
@@ -406,7 +394,7 @@ static void usb_process_set_interface(USB_SetupPacket *setup) {
       USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
 
       // 受信準備
-      USB_OUTEP[1].DOEPTSIZ = (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | 196;
+      uac2_prepare_next_reception();
 
       LOG_INFO("Interface 1 Alt 1: Operational - endpoint enabled\r\n");
       usb_control_send_data(NULL, 0);
@@ -642,8 +630,12 @@ static void usb_handle_rxflvl(void) {
 
   case PKTSTS_OUT_DATA_RECEIVED: // OUT DATA受信
     USB_DATA("OUT DATA received\r\n");
-    if (bcnt > 0) {
-      usb_read_packet(NULL, bcnt);
+    if (epnum == 0) {
+      if (bcnt > 0) {
+        usb_read_packet(NULL, bcnt);
+      }
+    } else if (epnum == 1) {
+      uac2_read_audio_from_fifo(bcnt);
     }
     break;
 
@@ -721,12 +713,14 @@ static void usb_handle_oepint(void) {
 
         if (ep == 0) {
           usb_handle_ep0_out_complete();
+        } else if (ep == 1) {
+          uac2_handle_audio_data_received();
         }
-      }
 
-      if (doepint & USB_OTG_DOEPINT_STUP) {
-        USB_OUTEP[ep].DOEPINT = USB_OTG_DOEPINT_STUP;
-        LOG_INFO("EP%d out setup phase done\r\n", ep);
+        if (doepint & USB_OTG_DOEPINT_STUP) {
+          USB_OUTEP[ep].DOEPINT = USB_OTG_DOEPINT_STUP;
+          LOG_INFO("EP%d out setup phase done\r\n", ep);
+        }
       }
     }
   }
@@ -738,8 +732,9 @@ void OTG_FS_IRQHandler(void) {
   if (gintsts & USB_OTG_GINTSTS_USBRST) {
     USB_OTG_FS->GINTSTS = USB_OTG_GINTSTS_USBRST;
     LOG_INFO("USB reset\r\n");
-    USB_DEVICE->DAINTMSK =
-        (1 << USB_OTG_DAINTMSK_IEPM_Pos) | (1 << USB_OTG_DAINTMSK_OEPM_Pos);
+    USB_DEVICE->DAINTMSK = (0b11 << USB_OTG_DAINTMSK_IEPM_Pos) |
+                           (0b11 << USB_OTG_DAINTMSK_OEPM_Pos);
+
     USB_DEVICE->DCFG &= ~USB_OTG_DCFG_DAD;
     USB_INEP[0].DIEPCTL |= USB_OTG_DIEPCTL_USBAEP;
     USB_OUTEP[0].DOEPCTL |= USB_OTG_DOEPCTL_USBAEP;

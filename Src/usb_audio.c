@@ -1,14 +1,19 @@
 #include "usb_audio.h"
 #include "log.h"
+#include "stm32f411xe.h"
 #include "usart.h"
 #include "usb.h"
 #include <stddef.h>
+#include <stdint.h>
 
 // Global clock source state
 UAC2_ClockSourceState uac2_clock_source_state = {.sample_rate =
                                                      UAC2_SAMPLE_RATE_48000,
                                                  .clock_valid = true,
                                                  .clock_locked = true};
+static uint8_t audio_rx_buf[AUDIO_BUFFER_SIZE];
+static uint32_t audio_buffer_index = 0;
+int16_t audio_rx_samples[AUDIO_BUFFER_SIZE / 4];
 
 void uac2_init(void) {
   LOG_INFO("UAC2.0 Audio Class initialized\r\n");
@@ -150,4 +155,73 @@ void uac2_handle_clock_selector_request(USB_SetupPacket *setup,
   } else {
     usb_control_stall();
   }
+}
+
+static void process_audio_sample(uint8_t *data, uint32_t len) {
+  static uint32_t packet_count = 0;
+  packet_count++;
+
+  // 非ゼロバイトの検索
+  uint32_t non_zero_count = 0;
+  for (uint32_t i = 0; i < len; i++) {
+    if (data[i] != 0)
+      non_zero_count++;
+  }
+
+  LOG_DEBUG("Packet %d: %d/%d non-zero bytes\r\n", packet_count, non_zero_count,
+            len);
+
+  // 16 bit stereo = 4 bytes per sample
+  uint32_t sample_cnt = len / 4;
+
+  for (uint32_t i = 0; i < sample_cnt; i++) {
+    int16_t x_l = (data[i * 4 + 1] << 8) | data[i * 4];
+    int16_t x_r = (data[i * 4 + 3] << 8) | data[i * 4 + 2];
+
+    LOG_DEBUG("Sample %d: L=%d, R=%d\r\n", i, x_l, x_r);
+  }
+}
+
+void uac2_prepare_next_reception(void) {
+  USB_OUTEP[1].DOEPTSIZ =
+      (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | AUDIO_BUFFER_SIZE;
+  USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
+
+  LOG_INFO("Audio reception started\r\n");
+}
+
+void uac2_handle_audio_data_received(void) {
+  uint32_t received_bytes =
+      AUDIO_BUFFER_SIZE - (USB_OUTEP[1].DOEPTSIZ & USB_OTG_DOEPTSIZ_XFRSIZ);
+
+  LOG_DEBUG("Audio data received: %d bytes\r\n", received_bytes);
+
+  process_audio_sample(audio_rx_buf, received_bytes);
+
+  USB_OUTEP[1].DOEPTSIZ =
+      (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | AUDIO_BUFFER_SIZE;
+  USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
+}
+
+void uac2_read_audio_from_fifo(uint32_t byte_count) {
+  uint32_t word_count = (byte_count + 3) / 4;
+  uint32_t *fifo = USB_FIFO(0); // RXFIFO is always FIFO(0)
+
+  audio_buffer_index = 0;
+
+  for (uint32_t i = 0; i < word_count; i++) {
+    uint32_t data = *fifo;
+
+    LOG_DEBUG("FIFO[%d] = 0x%08X\r\n", i, data);
+
+    if (audio_buffer_index + 3 < sizeof(audio_rx_buf)) {
+      audio_rx_buf[audio_buffer_index++] = (uint8_t)(data >> 0) & 0xff;
+      audio_rx_buf[audio_buffer_index++] = (uint8_t)(data >> 8) & 0xff;
+      audio_rx_buf[audio_buffer_index++] = (uint8_t)(data >> 16) & 0xff;
+      audio_rx_buf[audio_buffer_index++] = (uint8_t)(data >> 24) & 0xff;
+    }
+  }
+
+  LOG_DEBUG("Stored %d bytes in audio buffer, total: %d\r\n", byte_count,
+            audio_buffer_index);
 }

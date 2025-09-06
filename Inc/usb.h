@@ -3,6 +3,19 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define USB_DEVICE                                                             \
+  ((USB_OTG_DeviceTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +                \
+                             USB_OTG_DEVICE_BASE))
+#define USB_INEP                                                               \
+  ((USB_OTG_INEndpointTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +            \
+                                 USB_OTG_IN_ENDPOINT_BASE))
+#define USB_OUTEP                                                              \
+  ((USB_OTG_OUTEndpointTypeDef *)((uint32_t)USB_OTG_FS_PERIPH_BASE +           \
+                                  USB_OTG_OUT_ENDPOINT_BASE))
+#define USB_FIFO(ep)                                                           \
+  ((uint32_t *)(USB_OTG_FS_PERIPH_BASE + USB_OTG_FIFO_BASE +                   \
+                ((ep) * USB_OTG_FIFO_SIZE)))
+
 typedef struct {
   uint8_t bmRequestType;
   uint8_t bRequest;
