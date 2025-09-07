@@ -187,7 +187,7 @@ const UAC2_ConfigurationDescriptor configuration_descriptor = {
             .bDescriptorType = 0x05,  // ENDPOINT
             .bEndpointAddress = 0x01, // EP1 OUT
             .bmAttributes = 0x09,     // Isochronous, Adaptive
-            .wMaxPacketSize = 196,    // 48kHz * 2ch * 2bytes + overhead
+            .wMaxPacketSize = 192,    // 48kHz * 2ch * 2bytes + overhead
             .bInterval = 1            // 1ms interval (Full Speed)
         },
 

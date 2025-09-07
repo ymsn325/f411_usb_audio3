@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define CALLBACK_TIME_HISTORY_SIZE 128
+
 // UAC2.0 Request Codes
 #define UAC2_REQUEST_CUR 0x01
 #define UAC2_REQUEST_RANGE 0x02

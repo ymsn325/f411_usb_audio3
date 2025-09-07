@@ -49,12 +49,6 @@ static void usb_core_reset(void) {
 }
 
 void usb_init(void) {
-  // Configuration Descriptorの後半部分をダンプ
-  LOG_INFO("=== Configuration Descriptor Last 20 bytes ===\r\n");
-  uint8_t *cfg = (uint8_t *)&configuration_descriptor;
-  for (int i = 107; i < 127; i++) {
-    LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
-  }
   RCC->AHB2ENR |= RCC_AHB2ENR_OTGFSEN;
   usb_core_reset();
   USB_OTG_FS->GCCFG |= USB_OTG_GCCFG_PWRDWN | USB_OTG_GCCFG_VBUSBSEN;
@@ -84,50 +78,6 @@ void usb_init(void) {
   uac2_init();
 }
 
-// void debug_raw_descriptors(void) {
-// LOG_INFO("=== Device Descriptor Raw ===\r\n");
-// uint8_t *dev = (uint8_t *)&device_descriptor;
-// for (int i = 0; i < 18; i++) {
-// LOG_INFO("dev[%02d]: 0x%02X\r\n", i, dev[i]);
-// }
-//
-// LOG_INFO("=== Configuration Descriptor First 40 bytes ===\r\n");
-// uint8_t *cfg = (uint8_t *)&configuration_descriptor;
-// for (int i = 0; i < 40; i++) {
-// LOG_INFO("cfg[%02d]: 0x%02X\r\n", i, cfg[i]);
-// }
-//
-// LOG_INFO("=== Expected values check ===\r\n");
-// LOG_INFO("Device Class (should be 0xEF): 0x%02X\r\n", dev[4]);
-// LOG_INFO("Device SubClass (should be 0x02): 0x%02X\r\n", dev[5]);
-// LOG_INFO("Device Protocol (should be 0x01): 0x%02X\r\n", dev[6]);
-// }
-
-// void debug_descriptor_content(void) {
-//   LOG_DEBUG("=== Configuration Descriptor Analysis ===\r\n");
-//   uint8_t *desc = (uint8_t *)&configuration_descriptor;
-
-//   for (int i = 0; i < 127;) {
-//     uint8_t length = desc[i];
-//     uint8_t type = desc[i + 1];
-
-//     LOG_DEBUG("Desc[%d]: Length=%d, Type=0x%02X\r\n", i, length, type);
-
-//     if (type == 0x0B)
-//       LOG_DEBUG("  -> Interface Association\r\n");
-//     if (type == 0x04)
-//       LOG_DEBUG("  -> Interface\r\n");
-//     if (type == 0x24)
-//       LOG_DEBUG("  -> Class-Specific Interface\r\n");
-//     if (type == 0x05)
-//       LOG_DEBUG("  -> Endpoint\r\n");
-//     if (type == 0x25)
-//       LOG_DEBUG("  -> Class-Specific Endpoint\r\n");
-
-//     i += length;
-//   }
-// }
-
 USB_ControlState usb_control_state = {
     .state = USB_CTRL_STATE_IDLE,
     .setup = {0},
@@ -139,8 +89,8 @@ USB_ControlState usb_control_state = {
 
 static void usb_cofig_audio_endpoint(void) {
   USB_OUTEP[1].DOEPCTL = USB_OTG_DOEPCTL_USBAEP | USB_OTG_DOEPCTL_EPTYP_0 |
-                         (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
-  USB_OTG_FS->DIEPTXF[0] = (196 << USB_OTG_DTXFSTS_INEPTFSAV_Pos) | 256;
+                         (192 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+  USB_OTG_FS->DIEPTXF[0] = (192 << USB_OTG_DTXFSTS_INEPTFSAV_Pos) | 256;
 }
 
 static void usb_get_device_descriptor(uint8_t **desc_data,
@@ -347,7 +297,7 @@ static void usb_process_set_configuration(USB_SetupPacket *setup) {
 
   if (configuration_value == 1) {
     USB_OUTEP[1].DOEPCTL =
-        USB_OTG_DOEPCTL_EPTYP_0 | (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+        USB_OTG_DOEPCTL_EPTYP_0 | (192 << USB_OTG_DOEPCTL_MPSIZ_Pos);
     LOG_INFO("Audio streaming endpoint enabled\r\n");
     current_configuration = 1;
     usb_control_send_data(NULL, 0);
@@ -390,7 +340,7 @@ static void usb_process_set_interface(USB_SetupPacket *setup) {
       // Alt 1: 動作モード（エンドポイント有効化）
       USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_USBAEP;
       USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPTYP_0; // Isochronous
-      USB_OUTEP[1].DOEPCTL |= (196 << USB_OTG_DOEPCTL_MPSIZ_Pos);
+      USB_OUTEP[1].DOEPCTL |= (192 << USB_OTG_DOEPCTL_MPSIZ_Pos);
       USB_OUTEP[1].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
 
       // 受信準備
@@ -677,7 +627,7 @@ static void usb_handle_ep0_out_complete(void) {
 void usb_prepare_ep0_out_status(void) {
   USB_OUTEP[0].DOEPTSIZ = (1 << USB_OTG_DOEPTSIZ_PKTCNT_Pos) | 0; // ZLP受信用
   USB_OUTEP[0].DOEPCTL |= USB_OTG_DOEPCTL_EPENA | USB_OTG_DOEPCTL_CNAK;
-  LOG_INFO("EP0 out status prepared\r\n");
+  LOG_DEBUG("EP0 out status prepared\r\n");
 }
 
 static void usb_handle_iepint(void) {
