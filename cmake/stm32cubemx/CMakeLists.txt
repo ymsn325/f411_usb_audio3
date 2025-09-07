@@ -23,6 +23,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/tim.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/gpio.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/i2c.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/i2s.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/cs43l22.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/usart.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Src/clock.c

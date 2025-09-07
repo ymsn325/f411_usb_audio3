@@ -18,6 +18,7 @@ void cs43l22_init(void) {
   tmp &= ~(1 << 7);
   i2c1_write_reg(CS43L22_ADDR, 0x32, tmp);
   i2c1_write_reg(CS43L22_ADDR, 0x00, 0x00);
+  i2c1_write_reg(CS43L22_ADDR, 0x06, (1 << 2));
   i2c1_write_reg(CS43L22_ADDR, 0x02, 0x9e);
 
   LOG_DEBUG("%s", "CS43L22 initialized\r\n");

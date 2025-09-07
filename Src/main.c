@@ -2,6 +2,7 @@
 #include "cs43l22.h"
 #include "gpio.h"
 #include "i2c.h"
+#include "i2s.h"
 #include "log.h"
 #include "tim.h"
 #include "usart.h"
@@ -9,7 +10,6 @@
 #include <stm32f411xe.h>
 
 int main(void) {
-  // ログレベル設定（デバッグ時はDEBUG、本番時はINFO）
   clock_init();
   gpio_init();
   usart2_init();
@@ -17,6 +17,7 @@ int main(void) {
   tim2_init();
   i2c1_init();
   cs43l22_init();
+  i2s3_init();
 
   // usb_init();
 
@@ -25,8 +26,6 @@ int main(void) {
   printf_usart2("Log level: %d\r\n", log_get_level());
   printf_usart2("--------------------------------\r\n");
 
-  uint8_t data = i2c1_read_reg(0x94, 0x01);
-  LOG_DEBUG("%x", data);
   while (1)
     ;
 }

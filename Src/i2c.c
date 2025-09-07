@@ -13,11 +13,6 @@ void i2c1_init(void) {
   I2C1->TRISE |= (1000 / (1000000000 / SystemCoreClock) + 1)
                  << I2C_TRISE_TRISE_Pos;
   I2C1->CR1 |= I2C_CR1_PE;
-
-  // 計算値の確認
-  uint32_t freq_val = SystemCoreClock / 2 / 1000000;
-  uint32_t ccr_val = SystemCoreClock / 2 / (2 * I2C_CLK_FREQ);
-  uint32_t trise_val = 1000 / (1000000000 / (SystemCoreClock / 2)) + 1;
 }
 
 static void i2c1_start(void) {

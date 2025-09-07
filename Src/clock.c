@@ -22,5 +22,13 @@ void clock_init(void) {
 
   RCC->CFGR |= RCC_CFGR_PPRE1_DIV2;
 
+  RCC->PLLI2SCFGR &= ~(RCC_PLLI2SCFGR_PLLI2SM | RCC_PLLI2SCFGR_PLLI2SN |
+                       RCC_PLLI2SCFGR_PLLI2SR);
+  RCC->PLLI2SCFGR |= (8 << RCC_PLLI2SCFGR_PLLI2SM_Pos) |
+                     (258 << RCC_PLLI2SCFGR_PLLI2SN_Pos) |
+                     (3 << RCC_PLLI2SCFGR_PLLI2SR_Pos);
+  RCC->CR |= RCC_CR_PLLI2SON;
+  while (!(RCC->CR & RCC_CR_PLLI2SRDY))
+    ;
   SystemCoreClockUpdate();
 }
