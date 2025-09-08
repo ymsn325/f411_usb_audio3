@@ -2,9 +2,7 @@
 #include "log.h"
 #include "usart.h"
 #include "usb_audio.h"
-#include <math.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stm32f411xe.h>
 
 extern int16_t audio_rx_samples_0[AUDIO_BUFFER_SIZE / 2];

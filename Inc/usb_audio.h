@@ -41,7 +41,7 @@
 #define UAC2_SAMPLE_RATE_48000 48000
 #define UAC2_SAMPLE_RATE_44100 44100
 
-#define AUDIO_BUFFER_SIZE 196
+#define AUDIO_BUFFER_SIZE 192
 
 // UAC2.0 Clock Source State
 typedef struct {

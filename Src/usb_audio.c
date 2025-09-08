@@ -171,21 +171,19 @@ static void process_audio_sample(uint8_t *data, uint32_t len) {
       (callback_time_history_index + 1) & (CALLBACK_TIME_HISTORY_SIZE - 1);
 
   uint32_t sample_cnt = len / 4;
-  uint8_t buf_select = DMA1_Stream5->CR & DMA_SxCR_CT;
+  uint8_t buf_select = (DMA1_Stream5->CR & DMA_SxCR_CT) ? 0 : 1;
 
   for (uint32_t i = 0; i < sample_cnt; i++) {
     int16_t x_l = (data[i * 4 + 1] << 8) | data[i * 4];
     int16_t x_r = (data[i * 4 + 3] << 8) | data[i * 4 + 2];
     // LOG_DEBUG("sample l: %d\r\n", x_l);
 
-    if (buf_select) {
-      audio_rx_samples_0[audio_samples_index] = x_l;
-      audio_rx_samples_0[audio_samples_index + 1] = x_r;
-      audio_samples_index = (audio_samples_index + 2) % (AUDIO_BUFFER_SIZE / 2);
+    if (buf_select == 0) {
+      audio_rx_samples_0[i * 2] = x_l;
+      audio_rx_samples_0[i * 2 + 1] = x_r;
     } else {
-      audio_rx_samples_1[audio_samples_index] = x_l;
-      audio_rx_samples_1[audio_samples_index + 1] = x_r;
-      audio_samples_index = (audio_samples_index + 2) % (AUDIO_BUFFER_SIZE / 2);
+      audio_rx_samples_1[i * 2] = x_l;
+      audio_rx_samples_1[i * 2 + 1] = x_r;
     }
   }
 }
